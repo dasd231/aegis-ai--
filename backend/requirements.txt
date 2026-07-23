@@ -13,5 +13,5 @@ openai==2.46.0
 prometheus-client>=0.22.0,<1.0.0
 cryptography>=48.0.1,<49.0.0
 PyMuPDF>=1.25.5,<2.0.0
-Pillow>=11.3.0,<13.0.0
+Pillow>=12.3.0,<13.0.0
 tzdata>=2025.2
