@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-canary
+  namespace: aegis
+  labels: {app.kubernetes.io/name: backend, app.kubernetes.io/part-of: aegis, track: canary}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: backend, track: canary}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: backend, app.kubernetes.io/part-of: aegis, track: canary}
+    spec:
+      serviceAccountName: aegis-runtime
+      terminationGracePeriodSeconds: 75
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: ghcr.io/replace-with-owner/aegis-backend:2026.07.22-canary
+          command: ["uvicorn"]
+          args: ["app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]
+          ports: [{name: http, containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: aegis-config}
+            - secretRef: {name: aegis-secrets}
+          startupProbe: {httpGet: {path: /api/v1/health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
+          readinessProbe: {httpGet: {path: /api/v1/health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /api/v1/health/live, port: http}, periodSeconds: 15}
+          lifecycle:
+            preStop:
+              exec: {command: ["sh", "-c", "sleep 15"]}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 300m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+          volumeMounts:
+            - {name: uploads, mountPath: /app/uploads}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim: {claimName: aegis-uploads}
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-canary
+  namespace: aegis
+  labels: {app.kubernetes.io/name: backend, track: canary}
+spec:
+  selector: {app.kubernetes.io/name: backend, track: canary}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aegis-canary
+  namespace: aegis
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: X-Aegis-Canary
+    nginx.ingress.kubernetes.io/canary-by-header-value: always
+    nginx.ingress.kubernetes.io/canary-weight: "5"
+    nginx.ingress.kubernetes.io/canary-weight-total: "100"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "180"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aegis.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: {name: backend-canary, port: {name: http}}

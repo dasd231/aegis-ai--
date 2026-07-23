@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-worker
+  namespace: aegis
+  labels: {app.kubernetes.io/name: ingestion-worker, app.kubernetes.io/part-of: aegis}
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 1, maxSurge: 1}
+  selector:
+    matchLabels: {app.kubernetes.io/name: ingestion-worker}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ingestion-worker, app.kubernetes.io/part-of: aegis}
+    spec:
+      serviceAccountName: aegis-runtime
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/replace-with-owner/aegis-backend:2026.07.22
+          command: ["python", "-m", "app.worker"]
+          envFrom:
+            - configMapRef: {name: aegis-config}
+            - secretRef: {name: aegis-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 200m, memory: 384Mi}
+            limits: {cpu: "1", memory: 1536Mi}
+          volumeMounts:
+            - {name: uploads, mountPath: /app/uploads}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim: {claimName: aegis-uploads}
+        - name: tmp
+          emptyDir: {sizeLimit: 512Mi}

@@ -1,0 +1,68 @@
+# Optional Prometheus Operator resources; excluded from kustomization.yaml.
+# vLLM exposes TTFT/inter-token latency, queue and KV-cache metrics on /metrics;
+# Aegis exposes routing/fallback/end-to-end metrics on its own /metrics endpoint.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: aegis-backend, namespace: aegis}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: backend}
+  namespaceSelector: {matchNames: [aegis]}
+  endpoints:
+    - {port: http, path: /metrics, interval: 15s}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: aegis-vllm, namespace: aegis}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: vllm}
+  namespaceSelector: {matchNames: [aegis]}
+  endpoints:
+    - {port: http, path: /metrics, interval: 15s}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: aegis-vllm-embedding, namespace: aegis}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: vllm-embedding}
+  namespaceSelector: {matchNames: [aegis]}
+  endpoints:
+    - {port: http, path: /metrics, interval: 15s}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: {name: aegis-canary-guard, namespace: aegis}
+spec:
+  groups:
+    - name: aegis-canary
+      rules:
+        - alert: AegisCanaryObservationFailureRateHigh
+          expr: |
+            sum(rate(aegis_canary_observations_total{result="failure"}[5m]))
+            /
+            clamp_min(sum(rate(aegis_canary_observations_total[5m])), 0.001)
+            > 0.10
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: Aegis Canary 失败率超过 10%
+            description: 检查实验审计和自动回滚状态；人工 Stage0/Kill Switch 不应被误报成自动回滚。
+        - alert: AegisCanaryFallbackRateHigh
+          expr: |
+            sum(rate(aegis_chat_requests_total{experiment_group="canary",fallback="true"}[5m]))
+            /
+            clamp_min(sum(rate(aegis_chat_requests_total{experiment_group="canary"}[5m])), 0.001)
+            > 0.05
+          for: 2m
+          labels: {severity: critical}
+          annotations: {summary: Canary 稳定版回退率超过 5%}
+        - alert: AegisCanaryTTFTP95High
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(aegis_chat_ttft_seconds_bucket{service_version=~".*canary.*"}[5m])))
+            > 4
+          for: 3m
+          labels: {severity: warning}
+          annotations: {summary: Canary TTFT p95 超过 4 秒}

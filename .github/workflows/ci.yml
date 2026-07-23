@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check app tests scripts migrations evaluation
+      - name: Verify immutable migrations
+        env:
+          ENVIRONMENT: test
+          DATABASE_URL: sqlite:///./data/ci-migration.db
+          AUTO_CREATE_TABLES: "false"
+          AUTO_SEED: "false"
+          SECRET_KEY: ci-secret-key-that-is-at-least-32-characters
+        run: alembic upgrade head && alembic check
+      - name: Tests and coverage gate
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=75
+      - name: Offline RAG quality gate
+        env:
+          ENVIRONMENT: test
+          DATABASE_URL: sqlite://
+          AUTO_CREATE_TABLES: "true"
+          AUTO_SEED: "false"
+          SECRET_KEY: ci-secret-key-that-is-at-least-32-characters
+          EMBEDDING_PROVIDER: local_hash
+        run: python -m scripts.evaluate_rag
+      - name: Dependency vulnerability audit
+        run: pip-audit -r requirements.txt
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high
+
+  manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate Compose merges
+        run: cp .env.example .env && docker compose config --quiet && docker compose -f docker-compose.yml -f docker-compose.distributed.yml config --quiet
+      - name: Render Kubernetes resources
+        run: |
+          kubectl kustomize deploy/k8s > /tmp/aegis-rendered.yaml
+          kubectl kustomize deploy/k8s/canary > /tmp/aegis-canary-rendered.yaml

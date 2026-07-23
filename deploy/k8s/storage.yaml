@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aegis-uploads
+  namespace: aegis
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 20Gi
+  # Set this to the cluster's RWX CSI class (NFS, CephFS, EFS, etc.).
+  storageClassName: replace-with-rwx-storage-class

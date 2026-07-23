@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: aegis
+  labels: {app.kubernetes.io/name: frontend, app.kubernetes.io/part-of: aegis}
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {app.kubernetes.io/name: frontend}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: frontend, app.kubernetes.io/part-of: aegis}
+    spec:
+      serviceAccountName: aegis-runtime
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: ghcr.io/replace-with-owner/aegis-frontend:2026.07.22
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: aegis
+spec:
+  selector: {app.kubernetes.io/name: frontend}
+  ports: [{name: http, port: 8080, targetPort: http}]

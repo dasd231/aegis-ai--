@@ -1,0 +1,84 @@
+services:
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.18.3}
+    restart: unless-stopped
+    volumes:
+      - qdrant_server_data:/qdrant/storage
+    networks: [internal]
+
+  backend:
+    environment:
+      INGESTION_MODE: queue
+      INGESTION_POLL_SECONDS: ${INGESTION_POLL_SECONDS:-1}
+      INGESTION_LEASE_SECONDS: ${INGESTION_LEASE_SECONDS:-300}
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      qdrant:
+        condition: service_started
+
+  ingestion-worker:
+    build:
+      context: ./backend
+      args:
+        BASE_IMAGE_REGISTRY: ${BASE_IMAGE_REGISTRY:-docker.io/library}
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      SECRET_KEY: ${SECRET_KEY:?set a random SECRET_KEY of at least 32 characters}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      AUTO_CREATE_TABLES: "false"
+      AUTO_SEED: "false"
+      INGESTION_MODE: queue
+      INGESTION_POLL_SECONDS: ${INGESTION_POLL_SECONDS:-1}
+      INGESTION_LEASE_SECONDS: ${INGESTION_LEASE_SECONDS:-300}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?set INITIAL_ADMIN_EMAIL}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?set a strong INITIAL_ADMIN_PASSWORD}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      BUSINESS_TIMEZONE: ${BUSINESS_TIMEZONE:-Asia/Hong_Kong}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local_hash}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      EMBEDDING_SEND_DIMENSIONS: ${EMBEDDING_SEND_DIMENSIONS:-true}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-20}
+      EMBEDDING_MAX_RETRIES: ${EMBEDDING_MAX_RETRIES:-2}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+      EMBEDDING_MAX_CONCURRENCY: ${EMBEDDING_MAX_CONCURRENCY:-64}
+      EMBEDDING_QUEUE_TIMEOUT_SECONDS: ${EMBEDDING_QUEUE_TIMEOUT_SECONDS:-2}
+      EMBEDDING_QUERY_CACHE_SIZE: ${EMBEDDING_QUERY_CACHE_SIZE:-512}
+      EMBEDDING_QUERY_CACHE_TTL_SECONDS: ${EMBEDDING_QUERY_CACHE_TTL_SECONDS:-300}
+      EMBEDDING_STABLE_VERSION: ${EMBEDDING_STABLE_VERSION:-embedding-stable-v1}
+      EMBEDDING_CANARY_MODEL: ${EMBEDDING_CANARY_MODEL:-}
+      EMBEDDING_CANARY_DIMENSIONS: ${EMBEDDING_CANARY_DIMENSIONS:-512}
+      EMBEDDING_CANARY_SEND_DIMENSIONS: ${EMBEDDING_CANARY_SEND_DIMENSIONS:-true}
+      EMBEDDING_CANARY_BASE_URL: ${EMBEDDING_CANARY_BASE_URL:-}
+      EMBEDDING_CANARY_API_KEY: ${EMBEDDING_CANARY_API_KEY:-}
+      EMBEDDING_CANARY_BATCH_SIZE: ${EMBEDDING_CANARY_BATCH_SIZE:-10}
+      EMBEDDING_CANARY_VERSION: ${EMBEDDING_CANARY_VERSION:-embedding-canary-v1}
+      MULTIMODAL_PROVIDER: ${MULTIMODAL_PROVIDER:-disabled}
+      VISION_MODEL: ${VISION_MODEL:-gpt-4o-mini}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_BOOTSTRAP_VALIDATED: ${DASHSCOPE_BOOTSTRAP_VALIDATED:-false}
+      UPLOAD_DIR: /app/uploads
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-aegis_knowledge_chunks}
+      QDRANT_CANARY_COLLECTION: ${QDRANT_CANARY_COLLECTION:-}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  qdrant_server_data:

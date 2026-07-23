@@ -1,0 +1,83 @@
+# Optional reference only; deliberately excluded from kustomization.yaml.
+# Validate the model/runner against the pinned vLLM image and GPU before production.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: vllm-embedding-stable, namespace: aegis}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: vllm-embedding, track: stable}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: vllm-embedding, app.kubernetes.io/part-of: aegis, track: stable}
+    spec:
+      nodeSelector: {accelerator: nvidia-gpu}
+      containers:
+        - name: vllm-embedding
+          image: vllm/vllm-openai@sha256:replace-with-tested-embedding-stable-digest
+          args:
+            - --model=BAAI/bge-m3
+            - --served-model-name=BAAI/bge-m3
+            - --runner=pooling
+            - --max-model-len=8192
+            - '--hf-overrides={"architectures":["BgeM3EmbeddingModel"]}'
+            - --disable-log-requests
+          ports: [{name: http, containerPort: 8000}]
+          startupProbe: {httpGet: {path: /health, port: http}, failureThreshold: 60, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          resources:
+            requests: {cpu: "2", memory: 8Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "8", memory: 24Gi, nvidia.com/gpu: "1"}
+          volumeMounts:
+            - {name: model-cache, mountPath: /root/.cache/huggingface}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim: {claimName: vllm-model-cache}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: vllm-embedding-stable, namespace: aegis}
+spec:
+  selector: {app.kubernetes.io/name: vllm-embedding, track: stable}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+# Build and warm this physical generation before EMBEDDING_CANARY_PERCENT is raised.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: vllm-embedding-canary, namespace: aegis}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: vllm-embedding, track: canary}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: vllm-embedding, app.kubernetes.io/part-of: aegis, track: canary}
+    spec:
+      nodeSelector: {accelerator: nvidia-gpu-canary}
+      containers:
+        - name: vllm-embedding
+          image: vllm/vllm-openai@sha256:replace-with-tested-embedding-canary-digest
+          args:
+            - --model=replace-with-canary-embedding-model
+            - --served-model-name=embedding-canary
+            - --runner=pooling
+            - --max-model-len=8192
+            - --disable-log-requests
+          ports: [{name: http, containerPort: 8000}]
+          startupProbe: {httpGet: {path: /health, port: http}, failureThreshold: 60, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          resources:
+            requests: {cpu: "2", memory: 8Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "8", memory: 24Gi, nvidia.com/gpu: "1"}
+          volumeMounts:
+            - {name: model-cache, mountPath: /root/.cache/huggingface}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim: {claimName: vllm-canary-model-cache}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: vllm-embedding-canary, namespace: aegis}
+spec:
+  selector: {app.kubernetes.io/name: vllm-embedding, track: canary}
+  ports: [{name: http, port: 8000, targetPort: http}]
