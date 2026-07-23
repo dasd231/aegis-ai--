@@ -20,7 +20,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -60,7 +60,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Validate Compose merges
         run: cp .env.example .env && docker compose config --quiet && docker compose -f docker-compose.yml -f docker-compose.distributed.yml config --quiet
       - name: Render Kubernetes resources
