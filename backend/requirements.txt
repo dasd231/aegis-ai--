@@ -1,5 +1,5 @@
 fastapi==0.139.2
-uvicorn[standard]>=0.35.0,<1.0.0
+uvicorn[standard]>=0.51.0,<1.0.0
 SQLAlchemy>=2.0.40,<3.0.0
 alembic==1.18.5
 PyMySQL>=1.1.1,<2.0.0
